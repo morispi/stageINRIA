@@ -93,19 +93,20 @@ def sortSV(vcf,bam,truth,margin):
                 v = Variant(line)
                 if v.get_svtype() != "BND":
                     # finds all barcodes for a variant :
-                    for read in samfile.fetch(v.chrom,v.pos,v.get_end()):
+                    end = v.get_end()
+                    for read in samfile.fetch(v.chrom,v.pos,end):
                         if read.has_tag('BX'):
                             bx = read.get_tag('BX')
                             all_bx.append(bx)
                     m = 100 if margin else 0
                     # variant is valid :
                     if isValid(v,realSV,m):
-                        worksheet.write(row,0,"region"+str(cpt))
+                        worksheet.write(row,0,v.chrom+":"+str(v.pos)+"-"+str(end))
                         worksheet.write(row,1,len(all_bx))
                         row += 1
                     # variant is not valid :
                     else:
-                        worksheet.write(row_bis,3,"region"+str(cpt))
+                        worksheet.write(row_bis,3,v.chrom+":"+str(v.pos)+"-"+str(end))
                         worksheet.write(row_bis,4,len(all_bx))
                         row_bis += 1
                     cpt += 1
@@ -114,4 +115,6 @@ def sortSV(vcf,bam,truth,margin):
 
 ####################################################
 
-sortSV("candidateSV.vcf","possorted_bam.bam","Truth",True)
+#sortSV("candidateSV.vcf","possorted_bam.bam","Truth",True)
+sortSV("candidateSV.vcf","possorted_bam.bam","Truth",False)
+
