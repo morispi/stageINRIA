@@ -37,7 +37,7 @@ class Variant:
         d = {}
         for field in info:
             e = field.split('=')
-            if len(e) == 1: # exception for fields without value
+            if len(e) == 1: # exception for keywords without value
                 d[e[0]] = ""
             else:
                 d[e[0]] = e[1] 
