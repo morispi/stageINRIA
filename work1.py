@@ -53,7 +53,7 @@ class Variant:
 
     def get_end(self):
         '''
-            Returns the end position of the variant.
+            Returns the variant's end position.
         '''
         if self.get_svtype() == "INS":
             if "RIGHT_SVINSSEQ" not in self.info:
@@ -65,13 +65,13 @@ class Variant:
 
     def get_svtype(self):
         '''
-            Returns the type of the variant.
+            Returns the variant's type.
         '''
         return self.info["SVTYPE"]
     
     def get_svlen(self):
         '''
-            Returns the length of the variant.
+            Returns variant's length.
         '''
         if "SVLEN" in self.info:
             return int(self.info["SVLEN"])
@@ -79,7 +79,7 @@ class Variant:
 def trueSV(file):
     '''
         Returns a list of variants within a file.
-        Registers first chromosome, beginning and end position.
+        Registers first chromosome, start and end position.
 
         file -- file
     '''
