@@ -45,6 +45,7 @@ class Variant:
         
     def get_pos(self,line):
         '''
+            Returns the variant's start position.
         '''
         if self.get_svtype() == "INS":
             return int(line[1]) - len(self.info["LEFT_SVINSSEQ"])
@@ -126,7 +127,7 @@ def sortSV(vcf,bam,truth,margin):
             line = filin.readline()
         # for each variant :
         while line != '':
-            all_bx = set() # contains all barcodes for a variant
+            all_bx = set() # contains all barcodes for the variant
             v = Variant(line)
             if v.get_svtype() != "BND":
                 # finds all barcodes for a variant :
