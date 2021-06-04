@@ -6,6 +6,9 @@
     BND variants are not considered.
 """
 
+########## RAJOUTER EXCEPTION POUR LES GET
+
+
 import pysam, xlsxwriter
 
 
@@ -18,29 +21,59 @@ class Variant:
     def __init__(self,line):
         line = line.split()
         self.chrom = line[0]
-        self.pos = int(line[1])
+        self.pos = self.get_pos(line)
         self.id = line[2]
         self.ref = line[3]
         self.alt = line[4]
         self.qual = line[5]
         self.filter = line[6]
-        self.info = line[7]
+        self.info = self.createDict(line)
+        
+    def createDict(self,line):
+        '''
+            Creates a dictionnary via all the info.
+        '''
+        info = line[7].split(";")
+        d = {}
+        for field in info:
+            e = field.split('=')
+            if len(e) == 1: # exception for fields without value
+                d[e[0]] = ""
+            else:
+                d[e[0]] = e[1] 
+        return d
+        
+    def get_pos(self,line):
+        '''
+        '''
+        if self.get_svtype() == "INS":
+            return int(line[1]) - len(self.info["LEFT_SVINSSEQ"])
+        return int(line[1])
 
     def get_end(self):
         '''
             Returns the end position of the variant.
         '''
-        end = (self.info.split(';')[0]).split('=')[1]
-        return int(end)
+        if self.get_svtype() == "INS":
+            if "RIGHT_SVINSSEQ" not in self.info:
+                return self.pos + int(self.info["SVLEN"])
+            else:
+                return self.pos + len(self.info["RIGHT_SVINSSEQ"])
+        else:
+            return int(self.info["END"])
 
     def get_svtype(self):
         '''
             Returns the type of the variant.
         '''
-        svtype= (self.info.split(';')[1]).split('=')[1]
-        if len(svtype) != 3:
-            svtype = "BND"
-        return svtype
+        return self.info["SVTYPE"]
+    
+    def get_svlen(self):
+        '''
+            Returns the length of the variant.
+        '''
+        if "SVLEN" in self.info:
+            return int(self.info["SVLEN"])
 
 def trueSV(file):
     '''
@@ -81,35 +114,39 @@ def sortSV(vcf,bam,truth,margin):
         truth -- file with real variants
         margin -- boolean
     '''
-    row = row_bis = cpt = 0
+    row = row_bis = 0
     realSV = trueSV(truth)
     samfile = pysam.AlignmentFile(bam,"rb")
     workbook = xlsxwriter.Workbook('results.xlsx')
     worksheet = workbook.add_worksheet()
     with open(vcf,"r") as filin:
-        for line in filin:
-            if not line.startswith('#'):
-                all_bx = [] # contains all barcodes for a variant
-                v = Variant(line)
-                if v.get_svtype() != "BND":
-                    # finds all barcodes for a variant :
-                    end = v.get_end()
-                    for read in samfile.fetch(v.chrom,v.pos,end):
-                        if read.has_tag('BX'):
-                            bx = read.get_tag('BX')
-                            all_bx.append(bx)
-                    m = 100 if margin else 0
-                    # variant is valid :
-                    if isValid(v,realSV,m):
-                        worksheet.write(row,0,v.chrom+":"+str(v.pos)+"-"+str(end))
-                        worksheet.write(row,1,len(all_bx))
-                        row += 1
-                    # variant is not valid :
-                    else:
-                        worksheet.write(row_bis,3,v.chrom+":"+str(v.pos)+"-"+str(end))
-                        worksheet.write(row_bis,4,len(all_bx))
-                        row_bis += 1
-                    cpt += 1
+        # skips file's head :
+        line = filin.readline()
+        while line.startswith('#'):
+            line = filin.readline()
+        # for each variant :
+        while line != '':
+            all_bx = set() # contains all barcodes for a variant
+            v = Variant(line)
+            if v.get_svtype() != "BND":
+                # finds all barcodes for a variant :
+                end = v.get_end()
+                for read in samfile.fetch(v.chrom,v.pos,end):
+                    if read.has_tag('BX'):
+                        bx = read.get_tag('BX')
+                        all_bx.add(bx)
+                m = 100 if margin else 0
+                # variant is valid :
+                if isValid(v,realSV,m):
+                    worksheet.write(row,0,v.chrom+":"+str(v.pos)+"-"+str(end))
+                    worksheet.write(row,1,len(all_bx))
+                    row += 1
+                # variant is not valid :
+                else:
+                    worksheet.write(row_bis,3,v.chrom+":"+str(v.pos)+"-"+str(end))
+                    worksheet.write(row_bis,4,len(all_bx))
+                    row_bis += 1
+            line = filin.readline()
     workbook.close()
     samfile.close()
 
