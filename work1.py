@@ -7,6 +7,9 @@
 """
 
 ########## RAJOUTER EXCEPTION POUR LES GET
+##### faire avec parametres
+#stats board
+#faire les fonctions ?
 
 
 import pysam, xlsxwriter
@@ -55,7 +58,8 @@ class Variant:
         '''
             Returns the variant's end position.
         '''
-        if self.get_svtype() == "INS":
+        svtype = self.get_svtype()
+        if svtype == "INS":
             if "RIGHT_SVINSSEQ" not in self.info:
                 return self.pos + int(self.info["SVLEN"])
             else:
@@ -80,7 +84,6 @@ def trueSV(file):
     '''
         Returns a list of variants within a file.
         Registers first chromosome, start and end position.
-
         file -- file
     '''
     truth = []
@@ -94,7 +97,6 @@ def trueSV(file):
 def isValid(variant,L,m):
     '''
         Returns True if a Variant is valid, else False.
-
         variant -- Variant object
         L -- list of real variants
         m -- int
@@ -105,17 +107,34 @@ def isValid(variant,L,m):
     return False
 
 
+def get_nb_Bx(file,chrom,start,end):
+    '''
+        Returns the number of different barcodes in a region.
+
+        file -- a samfile
+        chrom -- chromosome name
+        start -- region's start position
+        end -- region's end position
+    '''
+        all_bx = set()
+        for read in file.fetch(chrom,start,end):
+            if read.has_tag('BX'):
+                bx = read.get_tag('BX')
+                all_bx.add(bx)
+        return len(all_bx)
+
+
 def sortSV(vcf,bam,truth,margin):
     '''
         Creates results.xlsx containing the number of barcodes for real
         variants and false one.
-
         vcf -- vcf file with variants
         bam -- bam file with reads mapping in the genome reference
         truth -- file with real variants
         margin -- boolean
     '''
     row = row_bis = 0
+    m = 100 if margin else 0
     realSV = trueSV(truth)
     samfile = pysam.AlignmentFile(bam,"rb")
     workbook = xlsxwriter.Workbook('results.xlsx')
@@ -127,25 +146,36 @@ def sortSV(vcf,bam,truth,margin):
             line = filin.readline()
         # for each variant :
         while line != '':
-            all_bx = set() # contains all barcodes for the variant
             v = Variant(line)
-            if v.get_svtype() != "BND":
-                # finds all barcodes for a variant :
+            if v.get_svtype() == "BND":
+                filin.skip()
+                filin.skip()
+                line = filin.readline()
+                v_pair = Variant(line)
+                nb_Bx = get_nb_Bx(samfile,v.chrom,v.pos,v_pair.pos)
+                nb_Bx_pair = get_nb_Bx(samfile,?,v.?,v_pair.?)
+            else:
                 end = v.get_end()
-                for read in samfile.fetch(v.chrom,v.pos,end):
-                    if read.has_tag('BX'):
-                        bx = read.get_tag('BX')
-                        all_bx.add(bx)
-                m = 100 if margin else 0
-                # variant is valid :
-                if isValid(v,realSV,m):
-                    worksheet.write(row,0,v.chrom+":"+str(v.pos)+"-"+str(end))
-                    worksheet.write(row,1,len(all_bx))
+                nb_Bx = get_nb_Bx(samfile,v.chrom,v.pos,end)
+            # variant is valid :
+            if isValid(v,realSV,m):
+                worksheet.write(row,0,v.chrom+":"+str(v.pos)+"-"+str(end))
+                worksheet.write(row,1,nb_Bx)
+                row += 1
+            # variant is not valid :
+            else:
+                worksheet.write(row_bis,3,v.chrom+":"+str(v.pos)+"-"+str(end))
+                worksheet.write(row_bis,4,nb_Bx)
+                row_bis += 1
+            # isValid for the v_pair :
+            if 'v_pair' in locals():
+                if isValid(v_pair,realSV,m):
+                    worksheet.write(row,0,v_pair.chrom+":"+str(?)+"-"+str(?)
+                    worksheet.write(row,1,nb_Bx)
                     row += 1
-                # variant is not valid :
                 else:
-                    worksheet.write(row_bis,3,v.chrom+":"+str(v.pos)+"-"+str(end))
-                    worksheet.write(row_bis,4,len(all_bx))
+                    worksheet.write(row_bis,3,v.chrom+":"+str(?)+"-"+str(?)
+                    worksheet.write(row_bis,4,nb_Bx)
                     row_bis += 1
             line = filin.readline()
     workbook.close()
@@ -155,4 +185,3 @@ def sortSV(vcf,bam,truth,margin):
 
 #sortSV("candidateSV.vcf","possorted_bam.bam","Truth",True)
 sortSV("candidateSV.vcf","possorted_bam.bam","Truth",False)
-
