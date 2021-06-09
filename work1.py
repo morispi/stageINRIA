@@ -3,10 +3,11 @@
 
 """
     Comparison of the number of barcodes between real variants and false one.
-    BND variants are not considered.
 """
 
 ########## RAJOUTER EXCEPTION POUR LES GET
+##### faire avec parametres
+
 
 
 import pysam, xlsxwriter
@@ -20,6 +21,7 @@ class Variant:
     '''
     def __init__(self,line):
         line = line.split()
+        self.info = self.createDict(line)
         self.chrom = line[0]
         self.pos = self.get_pos(line)
         self.id = line[2]
@@ -27,7 +29,6 @@ class Variant:
         self.alt = line[4]
         self.qual = line[5]
         self.filter = line[6]
-        self.info = self.createDict(line)
         
     def createDict(self,line):
         '''
@@ -47,7 +48,7 @@ class Variant:
         '''
             Returns the variant's start position.
         '''
-        if self.get_svtype() == "INS":
+        if self.get_svtype() == "INS" and "LEFT_SVINSSEQ" in self.info:
             return int(line[1]) - len(self.info["LEFT_SVINSSEQ"])
         return int(line[1])
 
@@ -55,7 +56,8 @@ class Variant:
         '''
             Returns the variant's end position.
         '''
-        if self.get_svtype() == "INS":
+        svtype = self.get_svtype()
+        if svtype == "INS":
             if "RIGHT_SVINSSEQ" not in self.info:
                 return self.pos + int(self.info["SVLEN"])
             else:
@@ -80,7 +82,7 @@ def trueSV(file):
     '''
         Returns a list of variants within a file.
         Registers first chromosome, start and end position.
-
+        
         file -- file
     '''
     truth = []
@@ -94,28 +96,82 @@ def trueSV(file):
 def isValid(variant,L,m):
     '''
         Returns True if a Variant is valid, else False.
-
+        
         variant -- Variant object
         L -- list of real variants
         m -- int
     '''
     for v in L:
-        if variant.chrom==v[0] and abs(v[1]-variant.pos)<=m and abs(v[2]-variant.get_end())<=m:
+        if variant.chrom == v[0] and abs(v[1] - variant.pos) <= m and abs(v[2] - variant.get_end()) <= m:
             return True
     return False
+
+
+def isValid_bnd(variant,L,m):
+    '''
+    '''
+    for v in L:
+        if variant[0] == v[0] and abs(variant[1] - v[1]) <= m and abs(variant[2] - v[2]) <= m:
+            return True
+    return False
+
+
+def get_nb_Bx(file,chrom,start,end):
+    '''
+        Returns the number of different barcodes in a region.
+
+        file -- a samfile
+        chrom -- chromosome name
+        start -- region's start position
+        end -- region's end position
+    '''
+    all_bx = set()
+    if start > end:
+        start1 = end
+        end1 = end
+    else:
+        start1 = start
+        end1 = end
+    for read in file.fetch(chrom,start1,end1):
+        if read.has_tag('BX'):
+            bx = read.get_tag('BX')
+            all_bx.add(bx)
+    return len(all_bx)
+
+
+def get_chrom_bis(v):
+    c = v.alt.split(':')
+    if '[' in c[0]:
+        c = c[0].split('[')
+        return c[1]
+    else:
+        c = c[0].split(']')
+        return c[1]
+
+
+def get_pos_bis(v):
+    c = v.alt.split(':')
+    try:
+        c = c[1].split(']')
+        return int(c[0])
+    except ValueError:
+        c = c[0].split('[')
+        return int(c[0])
 
 
 def sortSV(vcf,bam,truth,margin):
     '''
         Creates results.xlsx containing the number of barcodes for real
         variants and false one.
-
+        
         vcf -- vcf file with variants
         bam -- bam file with reads mapping in the genome reference
         truth -- file with real variants
         margin -- boolean
     '''
+    L = []
     row = row_bis = 0
+    m = 100 if margin else 0
     realSV = trueSV(truth)
     samfile = pysam.AlignmentFile(bam,"rb")
     workbook = xlsxwriter.Workbook('results.xlsx')
@@ -127,25 +183,52 @@ def sortSV(vcf,bam,truth,margin):
             line = filin.readline()
         # for each variant :
         while line != '':
-            all_bx = set() # contains all barcodes for the variant
             v = Variant(line)
-            if v.get_svtype() != "BND":
-                # finds all barcodes for a variant :
+            if v.get_svtype() == "BND":
+                if L ==[]:
+                    L.append([v.chrom,v.pos,-1])
+                    L.append([get_chrom_bis(v),get_pos_bis(v),-1])
+                else:
+                    if v.pos > L[0][2]:
+                        L[0][2] = v.pos
+                    if get_pos_bis(v) > L[1][2]:
+                        L[1][2] = get_pos_bis(v)
+            else:
+                if L != [] and L[0][2] != -1 and L[1][2] != -1:
+                    nb_Bx = get_nb_Bx(samfile,L[0][0],L[0][1],L[0][2])
+                    nb_Bx_pair = get_nb_Bx(samfile,L[1][0],L[1][1],L[1][2])
+                    # first BND variant is valid :
+                    if isValid_bnd(L[0],realSV,m):
+                       worksheet.write(row,0,L[0][0]+":"+str(L[0][1])+"-"+str(L[0][1]))
+                       worksheet.write(row,1,nb_Bx)
+                       row += 1
+                    # first BND variant is not valid :
+                    else:
+                        worksheet.write(row_bis,3,L[0][0]+":"+str(L[0][1])+"-"+str(L[0][1]))
+                        worksheet.write(row_bis,4,nb_Bx)
+                        row_bis += 1
+                    # second BND variant is valid :
+                    if isValid_bnd(L[1],realSV,m):
+                       worksheet.write(row,0,L[1][0]+":"+str(L[1][1])+"-"+str(L[1][2]))
+                       worksheet.write(row,1,nb_Bx_pair)
+                       row += 1
+                    # second BND variant is not valid :
+                    else:
+                        worksheet.write(row_bis,3,L[1][0]+":"+str(L[1][1])+"-"+str(L[1][2]))
+                        worksheet.write(row_bis,4,nb_Bx_pair)
+                        row_bis += 1
+                    L = []
                 end = v.get_end()
-                for read in samfile.fetch(v.chrom,v.pos,end):
-                    if read.has_tag('BX'):
-                        bx = read.get_tag('BX')
-                        all_bx.add(bx)
-                m = 100 if margin else 0
+                nb_Bx = get_nb_Bx(samfile,v.chrom,v.pos,end)
                 # variant is valid :
                 if isValid(v,realSV,m):
                     worksheet.write(row,0,v.chrom+":"+str(v.pos)+"-"+str(end))
-                    worksheet.write(row,1,len(all_bx))
+                    worksheet.write(row,1,nb_Bx)
                     row += 1
                 # variant is not valid :
                 else:
                     worksheet.write(row_bis,3,v.chrom+":"+str(v.pos)+"-"+str(end))
-                    worksheet.write(row_bis,4,len(all_bx))
+                    worksheet.write(row_bis,4,nb_Bx)
                     row_bis += 1
             line = filin.readline()
     workbook.close()
@@ -154,5 +237,4 @@ def sortSV(vcf,bam,truth,margin):
 ####################################################
 
 #sortSV("candidateSV.vcf","possorted_bam.bam","Truth",True)
-sortSV("candidateSV.vcf","possorted_bam.bam","Truth",False)
-
+sortSV("candidateSV_inversion.vcf","possorted_bam.bam","Truth",False)
