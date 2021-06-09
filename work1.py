@@ -6,11 +6,9 @@
 """
 
 ########## RAJOUTER EXCEPTION POUR LES GET
-##### faire avec parametres
 
 
-
-import pysam, xlsxwriter
+import argparse, pysam, xlsxwriter
 
 
 class Variant:
@@ -109,6 +107,11 @@ def isValid(variant,L,m):
 
 def isValid_bnd(variant,L,m):
     '''
+        Returs True if a BND variant is valid, else False.
+        
+        variant -- a list as [chrom,start,end]
+        L -- list of real variants
+        m -- int
     '''
     for v in L:
         if variant[0] == v[0] and abs(variant[1] - v[1]) <= m and abs(variant[2] - v[2]) <= m:
@@ -139,7 +142,12 @@ def get_nb_Bx(file,chrom,start,end):
     return len(all_bx)
 
 
-def get_chrom_bis(v):
+def get_chrom_bnd(v):
+    '''
+        Returns the chromosome name of a BND variant.
+        
+        v -- Variant object
+    '''
     c = v.alt.split(':')
     if '[' in c[0]:
         c = c[0].split('[')
@@ -149,7 +157,12 @@ def get_chrom_bis(v):
         return c[1]
 
 
-def get_pos_bis(v):
+def get_pos_bnd(v):
+    '''
+        Returns the position in ALT attribute of a BND variant.
+        
+        v -- Variant object
+    '''
     c = v.alt.split(':')
     try:
         c = c[1].split(']')
@@ -187,21 +200,22 @@ def sortSV(vcf,bam,truth,margin):
             if v.get_svtype() == "BND":
                 if L ==[]:
                     L.append([v.chrom,v.pos,-1])
-                    L.append([get_chrom_bis(v),get_pos_bis(v),-1])
+                    L.append([get_chrom_bnd(v),get_pos_bnd(v),-1])
                 else:
                     if v.pos > L[0][2]:
                         L[0][2] = v.pos
-                    if get_pos_bis(v) > L[1][2]:
-                        L[1][2] = get_pos_bis(v)
+                    if get_pos_bnd(v) > L[1][2]:
+                        L[1][2] = get_pos_bnd(v)
             else:
+                # we treat the BND variants :
                 if L != [] and L[0][2] != -1 and L[1][2] != -1:
                     nb_Bx = get_nb_Bx(samfile,L[0][0],L[0][1],L[0][2])
                     nb_Bx_pair = get_nb_Bx(samfile,L[1][0],L[1][1],L[1][2])
                     # first BND variant is valid :
                     if isValid_bnd(L[0],realSV,m):
-                       worksheet.write(row,0,L[0][0]+":"+str(L[0][1])+"-"+str(L[0][1]))
-                       worksheet.write(row,1,nb_Bx)
-                       row += 1
+                        worksheet.write(row,0,L[0][0]+":"+str(L[0][1])+"-"+str(L[0][1]))
+                        worksheet.write(row,1,nb_Bx)
+                        row += 1
                     # first BND variant is not valid :
                     else:
                         worksheet.write(row_bis,3,L[0][0]+":"+str(L[0][1])+"-"+str(L[0][1]))
@@ -209,15 +223,16 @@ def sortSV(vcf,bam,truth,margin):
                         row_bis += 1
                     # second BND variant is valid :
                     if isValid_bnd(L[1],realSV,m):
-                       worksheet.write(row,0,L[1][0]+":"+str(L[1][1])+"-"+str(L[1][2]))
-                       worksheet.write(row,1,nb_Bx_pair)
-                       row += 1
+                        worksheet.write(row,0,L[1][0]+":"+str(L[1][1])+"-"+str(L[1][2]))
+                        worksheet.write(row,1,nb_Bx_pair)
+                        row += 1
                     # second BND variant is not valid :
                     else:
                         worksheet.write(row_bis,3,L[1][0]+":"+str(L[1][1])+"-"+str(L[1][2]))
                         worksheet.write(row_bis,4,nb_Bx_pair)
                         row_bis += 1
                     L = []
+                # treatment of a non BND variant :
                 end = v.get_end()
                 nb_Bx = get_nb_Bx(samfile,v.chrom,v.pos,end)
                 # variant is valid :
@@ -236,5 +251,16 @@ def sortSV(vcf,bam,truth,margin):
 
 ####################################################
 
-#sortSV("candidateSV.vcf","possorted_bam.bam","Truth",True)
-sortSV("candidateSV_inversion.vcf","possorted_bam.bam","Truth",False)
+
+parser = argparse.ArgumentParser(description='Sort SV')
+parser.add_argument('-vcf', type=str, required=True, help='vcf file')
+parser.add_argument('-bam', type=str, required=True, help='bam file')
+parser.add_argument('-t', type=str, required=True, help='Truth file')
+parser.add_argument('-m', action='store_true', help="Allows a margin to increase variants's length")
+args = parser.parse_args()
+
+if __name__ == '__main__':
+    if args.m:
+        sortSV(args.vcf,args.bam,args.t,True)
+    else:
+        sortSV(args.vcf,args.bam,args.t,False)
